@@ -1,3 +1,4 @@
+
 from pymongo import MongoClient
 from bson import Binary
 from datetime import datetime
@@ -34,8 +35,10 @@ model = tf.keras.models.load_model(MODEL_PATH)
 # Class labels (MUST match training folder names)
 class_labels = ['glioma_tumor', 'meningioma_tumor', 'no_tumor', 'pituitary_tumor']
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
 
 def is_brain_mri_from_bytes(file_bytes):
     """Validate MRI from in-memory bytes (no file save)"""
@@ -52,27 +55,36 @@ def is_brain_mri_from_bytes(file_bytes):
         edge_pixels = np.concatenate([
             img[0, :], img[-1, :], img[:, 0], img[:, -1]
         ])
-        center = img[h//4:3*h//4, w//4:3*w//4]
+        center = img[h // 4:3 * h // 4, w // 4:3 * w // 4]
         if np.mean(center) <= np.mean(edge_pixels) + 10:
             return False, "Does not resemble brain MRI (no bright center)"
         return True, "Valid"
     except Exception as e:
         return False, str(e)
 
+
+def is_brain_mri(file_path):
+    """Wrapper for MRI validation from file path"""
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+    return is_brain_mri_from_bytes(file_bytes)
+
+
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 
 # 🔥 NEW: API endpoint for React frontend
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
-    
+
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
-        
+
     if file and allowed_file(file.filename):
         # Read file into memory (no saving to disk)
         file_bytes = file.read()
@@ -106,14 +118,15 @@ def predict():
             "timestamp": datetime.utcnow()
         }
         result = scans_collection.insert_one(scan_doc)
-        
+
         return jsonify({
             'scan_id': str(result.inserted_id),
             'class': scan_doc['prediction']['class'],
             'confidence': scan_doc['prediction']['confidence']
         })
-    
+
     return jsonify({'error': 'Invalid file type'}), 400
+
 
 # Existing route for Flask frontend (optional)
 @app.route('/', methods=['GET', 'POST'])
@@ -151,6 +164,7 @@ def index():
             return render_template('index.html', prediction=result, image=filename)
 
     return render_template('index.html')
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

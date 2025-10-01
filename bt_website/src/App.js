@@ -3,6 +3,7 @@ import Header from './components/Header';
 import Home from './components/Home';
 import About from './components/About';
 import UploadModal from './components/UploadModal';
+import Landing from './components/Landing';
 import './App.css';
 
 
@@ -54,6 +55,7 @@ function App() {
       <Header activePage={activePage} setActivePage={setActivePage} />
       
       {activePage === 'home' && <Home onTryClick={handleTryClick} />}
+      {activePage === 'landing' && <Landing />}
       {activePage === 'about' && <About />}
       {activePage === 'result' && (
         <div className="result-page">

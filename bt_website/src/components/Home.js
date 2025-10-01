@@ -11,6 +11,7 @@ export default function Home({ onTryClick }) {
         <button className="try-btn" onClick={onTryClick}>
           <FaUpload /> Try Me
         </button>
+        
       </div>
     </div>
   );

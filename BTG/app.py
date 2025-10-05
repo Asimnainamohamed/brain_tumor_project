@@ -1,38 +1,40 @@
-
 from pymongo import MongoClient
 from bson import Binary
 from datetime import datetime
 import io
 import os
 from flask import Flask, request, render_template, send_from_directory, jsonify
-from flask_cors import CORS  # ← Added for React frontend support
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import numpy as np
 from PIL import Image
 import cv2
 import tensorflow as tf
 
-client = MongoClient('mongodb://localhost:27017/')
+# 🔑 Connect to MongoDB Atlas using environment variable
+MONGODB_URI = os.environ.get('MONGODB_URI')
+if not MONGODB_URI:
+    raise ValueError("MONGODB_URI environment variable is required! Set it in Render dashboard.")
+
+client = MongoClient(MONGODB_URI)
 db = client.brain_tumor_db
 scans_collection = db.mri_scans
 
 app = Flask(__name__)
-CORS(app)  # ← Allow requests from React (localhost:3000 or Vercel)
+CORS(app)
 
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 
-# Create upload folder if not exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Load your trained model
+# Load model
 MODEL_PATH = 'brain_tumor_model.h5'
 if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"Model file not found: {MODEL_PATH}. Please train it first.")
+    raise FileNotFoundError(f"Model file not found: {MODEL_PATH}. Please ensure it's in your repo.")
 model = tf.keras.models.load_model(MODEL_PATH)
 
-# Class labels (MUST match training folder names)
 class_labels = ['glioma_tumor', 'meningioma_tumor', 'no_tumor', 'pituitary_tumor']
 
 
@@ -41,7 +43,6 @@ def allowed_file(filename):
 
 
 def is_brain_mri_from_bytes(file_bytes):
-    """Validate MRI from in-memory bytes (no file save)"""
     try:
         nparr = np.frombuffer(file_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
@@ -64,7 +65,6 @@ def is_brain_mri_from_bytes(file_bytes):
 
 
 def is_brain_mri(file_path):
-    """Wrapper for MRI validation from file path"""
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     return is_brain_mri_from_bytes(file_bytes)
@@ -75,7 +75,6 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
-# 🔥 NEW: API endpoint for React frontend
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'file' not in request.files:
@@ -86,31 +85,26 @@ def predict():
         return jsonify({'error': 'No file selected'}), 400
 
     if file and allowed_file(file.filename):
-        # Read file into memory (no saving to disk)
         file_bytes = file.read()
         filename = secure_filename(file.filename)
 
-        # Validate MRI from bytes
         is_mri, msg = is_brain_mri_from_bytes(file_bytes)
         if not is_mri:
             return jsonify({'error': msg}), 400
 
-        # Preprocess for model
         img = Image.open(io.BytesIO(file_bytes)).convert('RGB')
         img = img.resize((224, 224))
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
-        # Predict
         predictions = model.predict(img_array)
         pred_idx = np.argmax(predictions[0])
         confidence = float(predictions[0][pred_idx]) * 100
         predicted_class = class_labels[pred_idx]
 
-        # 🧠 STORE IN LOCAL MONGODB
         scan_doc = {
             "filename": filename,
-            "image_data": Binary(file_bytes),  # Store as binary
+            "image_data": Binary(file_bytes),
             "prediction": {
                 "class": predicted_class.replace('_', ' ').title(),
                 "confidence": round(confidence, 2)
@@ -128,7 +122,6 @@ def predict():
     return jsonify({'error': 'Invalid file type'}), 400
 
 
-# Existing route for Flask frontend (optional)
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
